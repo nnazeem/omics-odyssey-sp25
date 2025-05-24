@@ -312,6 +312,34 @@
                     No UMAP embedding found in this file. The file does not contain 'X_umap' in the obsm group.
                 </div>
                 
+                <div id="colorControls" style="display: none; margin-bottom: 15px;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                        <label for="obsKeySelect" style="font-weight: 500; min-width: 120px;">Color by .obs key:</label>
+                        <select id="obsKeySelect" style="flex: 1; max-width: 300px; padding: 8px; border-radius: 4px; border: 1px solid #ddd;">
+                            <option value="">None (default color)</option>
+                        </select>
+                        <div id="colorLoading" class="spinner" style="display: none; margin-left: 10px;"></div>
+                    </div>
+                    
+                    <div style="margin-bottom: 10px;">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
+                            <label for="geneSearch" style="font-weight: 500; min-width: 120px;">Color by gene:</label>
+                            <div id="geneLoading" class="spinner" style="display: none; margin-left: 10px;"></div>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <div style="flex: 1; position: relative;">
+                                <input type="text" id="geneSearch" placeholder="Search for a gene..." style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ddd; font-size: 14px;">
+                                <div id="geneResults" style="display: none; position: absolute; width: 100%; max-height: 200px; overflow-y: auto; background: white; border: 1px solid #ddd; border-radius: 4px; z-index: 100; margin-top: 2px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);"></div>
+                            </div>
+                            <button id="clearGene" style="padding: 8px; border-radius: 4px; border: 1px solid #ddd; background: #f5f5f5; cursor: pointer; flex-shrink: 0;">Clear</button>
+                        </div>
+                    </div>
+                    <div id="legendContainer" style="margin-top: 10px; display: none;">
+                        <div id="legendTitle" style="font-weight: 500; margin-bottom: 5px;">Legend:</div>
+                        <div id="legend" style="display: flex; flex-wrap: wrap; gap: 8px; max-height: 100px; overflow-y: auto;"></div>
+                    </div>
+                </div>
+                
                 <div id="plotContainer" class="plot-container" style="display: none; width: calc(100% - 20px); aspect-ratio: 1/1; max-height: calc(100vh - 120px);">
                     <div id="umap-plot"></div>
                 </div>
@@ -321,7 +349,7 @@
 
     <!-- Import h5parser module -->    
     <script type="module">
-        import { parseH5AD, getH5ADMetadata, extractUMAPData } from './h5parser.js';
+        import { parseH5AD, getH5ADMetadata, extractUMAPData, getObservationValues, getGeneNames, getGeneExpression } from './h5parser.js';
         
         document.addEventListener('DOMContentLoaded', async () => {
             // Get file info from sessionStorage
@@ -358,6 +386,308 @@
                             try {
                                 // Parse the h5ad file structure
                                 const result = await parseH5AD(fileData.file);
+                                
+                                // Get gene names for the search functionality
+                                console.log("Getting gene names...");
+                                getGeneNames(fileData.file).then(geneResult => {
+                                    console.log("Gene names result:", geneResult);
+                                    
+                                    // Store gene names globally for searching
+                                    if (geneResult.geneNames && geneResult.geneNames.length > 0) {
+                                        window.geneNames = geneResult.geneNames;
+                                        console.log(`Stored ${window.geneNames.length} gene names for searching`);
+                                        
+                                        // Set up gene search functionality
+                                        setupGeneSearch();
+                                    }
+                                }).catch(error => {
+                                    console.error("Error getting gene names:", error);
+                                });
+                                
+                                // Function to set up gene search
+                                function setupGeneSearch() {
+                                    const geneSearch = document.getElementById('geneSearch');
+                                    const geneResults = document.getElementById('geneResults');
+                                    const clearGeneButton = document.getElementById('clearGene');
+                                    let selectedGene = '';
+                                    
+                                    // Search as you type
+                                    geneSearch.addEventListener('input', function() {
+                                        const searchTerm = this.value.trim().toLowerCase();
+                                        
+                                        // Clear results
+                                        geneResults.innerHTML = '';
+                                        
+                                        if (searchTerm.length < 2) {
+                                            geneResults.style.display = 'none';
+                                            return;
+                                        }
+                                        
+                                        // Filter genes based on search term
+                                        const matchingGenes = window.geneNames.filter(gene => 
+                                            gene.toLowerCase().includes(searchTerm)
+                                        ).slice(0, 50); // Limit to 50 results for performance
+                                        
+                                        if (matchingGenes.length === 0) {
+                                            const noResults = document.createElement('div');
+                                            noResults.textContent = 'No matching genes found';
+                                            noResults.style.padding = '8px';
+                                            noResults.style.color = '#666';
+                                            geneResults.appendChild(noResults);
+                                        } else {
+                                            // Create result items
+                                            matchingGenes.forEach(gene => {
+                                                const resultItem = document.createElement('div');
+                                                resultItem.textContent = gene;
+                                                resultItem.style.padding = '8px';
+                                                resultItem.style.cursor = 'pointer';
+                                                resultItem.style.borderBottom = '1px solid #eee';
+                                                
+                                                // Highlight on hover
+                                                resultItem.addEventListener('mouseover', function() {
+                                                    this.style.backgroundColor = '#f0f0f0';
+                                                });
+                                                
+                                                resultItem.addEventListener('mouseout', function() {
+                                                    this.style.backgroundColor = 'white';
+                                                });
+                                                
+                                                // Select gene on click
+                                                resultItem.addEventListener('click', function() {
+                                                    selectedGene = gene;
+                                                    geneSearch.value = gene;
+                                                    geneResults.style.display = 'none';
+                                                    
+                                                    // Clear obs key selector when gene is selected
+                                                    document.getElementById('obsKeySelect').value = '';
+                                                    
+                                                    // Update UMAP colors based on gene expression
+                                                    updateUMAPByGene(gene);
+                                                });
+                                                
+                                                geneResults.appendChild(resultItem);
+                                            });
+                                        }
+                                        
+                                        geneResults.style.display = 'block';
+                                    });
+                                    
+                                    // Hide results when clicking outside
+                                    document.addEventListener('click', function(event) {
+                                        if (!geneSearch.contains(event.target) && !geneResults.contains(event.target)) {
+                                            geneResults.style.display = 'none';
+                                        }
+                                    });
+                                    
+                                    // Clear button functionality
+                                    clearGeneButton.addEventListener('click', function() {
+                                        geneSearch.value = '';
+                                        selectedGene = '';
+                                        geneResults.style.display = 'none';
+                                        
+                                        // Reset to default color
+                                        updateUMAPColors();
+                                        
+                                        // Clear legend
+                                        const legendContainer = document.getElementById('legendContainer');
+                                        const legend = document.getElementById('legend');
+                                        legend.innerHTML = '';
+                                        legendContainer.style.display = 'none';
+                                    });
+                                    
+                                    // Handle Enter key press in search box
+                                    geneSearch.addEventListener('keypress', function(event) {
+                                        if (event.key === 'Enter' && this.value.trim() !== '') {
+                                            // Get the first matching gene
+                                            const searchTerm = this.value.trim().toLowerCase();
+                                            const exactMatch = window.geneNames.find(gene => 
+                                                gene.toLowerCase() === searchTerm
+                                            );
+                                            const firstMatch = window.geneNames.find(gene => 
+                                                gene.toLowerCase().includes(searchTerm)
+                                            );
+                                            
+                                            const geneToUse = exactMatch || firstMatch;
+                                            
+                                            if (geneToUse) {
+                                                selectedGene = geneToUse;
+                                                this.value = geneToUse;
+                                                geneResults.style.display = 'none';
+                                                
+                                                // Clear obs key selector
+                                                document.getElementById('obsKeySelect').value = '';
+                                                
+                                                // Update UMAP colors
+                                                updateUMAPByGene(geneToUse);
+                                            }
+                                        }
+                                    });
+                                }
+                                
+                                // Function to update UMAP colors based on observation values or gene expression
+                                function updateUMAPColors(dataValues = null) {
+                                    const { xValues, yValues } = window.umapData;
+                                    
+                                    let colors;
+                                    let colorscale;
+                                    
+                                    if (!dataValues) {
+                                        // Default color
+                                        colors = '#4a6fa5';
+                                    } else if (dataValues.isCategorical) {
+                                        // Generate colors for categorical data
+                                        const uniqueValues = dataValues.uniqueValues;
+                                        const colorMap = generateCategoricalColors(uniqueValues);
+                                        colors = dataValues.values.map(val => colorMap[val]);
+                                    } else if (dataValues.isNumeric) {
+                                        // Use a color scale for numeric data
+                                        colors = dataValues.values;
+                                        colorscale = 'Viridis';
+                                    }
+                                    
+                                    const update = {
+                                        marker: { 
+                                            color: colors,
+                                            colorscale: colorscale,
+                                            size: 2.5,
+                                            opacity: 0.8,
+                                            line: { width: 0 }
+                                        }
+                                    };
+                                    
+                                    Plotly.restyle('umap-plot', update, 0);
+                                }
+                                
+                                // Function to generate colors for categorical data
+                                function generateCategoricalColors(uniqueValues) {
+                                    const colorMap = {};
+                                    const colorPalette = [
+                                        '#4285F4', '#EA4335', '#FBBC05', '#34A853', // Google colors
+                                        '#9C27B0', '#673AB7', '#3F51B5', '#2196F3', // Purple-Blue
+                                        '#03A9F4', '#00BCD4', '#009688', '#4CAF50', // Blue-Green
+                                        '#8BC34A', '#CDDC39', '#FFEB3B', '#FFC107', // Green-Yellow
+                                        '#FF9800', '#FF5722', '#795548', '#9E9E9E'  // Orange-Grey
+                                    ];
+                                    
+                                    uniqueValues.forEach((value, index) => {
+                                        colorMap[value] = colorPalette[index % colorPalette.length];
+                                    });
+                                    
+                                    return colorMap;
+                                }
+                                
+                                // Function to create legend for categorical data
+                                function createCategoricalLegend(obsValues) {
+                                    const legendContainer = document.getElementById('legendContainer');
+                                    const legend = document.getElementById('legend');
+                                    const legendTitle = document.getElementById('legendTitle');
+                                    
+                                    legendTitle.textContent = `Legend: ${obsValues.key}`;
+                                    
+                                    const colorMap = generateCategoricalColors(obsValues.uniqueValues);
+                                    
+                                    obsValues.uniqueValues.forEach(value => {
+                                        const legendItem = document.createElement('div');
+                                        legendItem.style.display = 'flex';
+                                        legendItem.style.alignItems = 'center';
+                                        legendItem.style.marginRight = '10px';
+                                        
+                                        const colorBox = document.createElement('div');
+                                        colorBox.style.width = '12px';
+                                        colorBox.style.height = '12px';
+                                        colorBox.style.backgroundColor = colorMap[value];
+                                        colorBox.style.marginRight = '5px';
+                                        colorBox.style.borderRadius = '2px';
+                                        
+                                        const valueText = document.createElement('span');
+                                        valueText.textContent = value;
+                                        valueText.style.fontSize = '0.85rem';
+                                        
+                                        legendItem.appendChild(colorBox);
+                                        legendItem.appendChild(valueText);
+                                        legend.appendChild(legendItem);
+                                    });
+                                    
+                                    legendContainer.style.display = 'block';
+                                }
+                                
+                                // Function to create legend for numeric data
+                                function createNumericLegend(obsValues) {
+                                    const legendContainer = document.getElementById('legendContainer');
+                                    const legend = document.getElementById('legend');
+                                    const legendTitle = document.getElementById('legendTitle');
+                                    
+                                    legendTitle.textContent = `Legend: ${obsValues.key} (min: ${obsValues.range.min.toFixed(2)}, max: ${obsValues.range.max.toFixed(2)})`;
+                                    
+                                    // Create a gradient for the numeric legend
+                                    const gradientContainer = document.createElement('div');
+                                    gradientContainer.style.width = '100%';
+                                    gradientContainer.style.display = 'flex';
+                                    gradientContainer.style.alignItems = 'center';
+                                    gradientContainer.style.marginBottom = '5px';
+                                    
+                                    const gradient = document.createElement('div');
+                                    gradient.style.width = '200px';
+                                    gradient.style.height = '20px';
+                                    gradient.style.background = 'linear-gradient(to right, #440154, #3b528b, #21918c, #5ec962, #fde725)';
+                                    gradient.style.borderRadius = '2px';
+                                    
+                                    const minLabel = document.createElement('div');
+                                    minLabel.textContent = obsValues.range.min.toFixed(2);
+                                    minLabel.style.marginRight = '5px';
+                                    minLabel.style.fontSize = '0.85rem';
+                                    
+                                    const maxLabel = document.createElement('div');
+                                    maxLabel.textContent = obsValues.range.max.toFixed(2);
+                                    maxLabel.style.marginLeft = '5px';
+                                    maxLabel.style.fontSize = '0.85rem';
+                                    
+                                    gradientContainer.appendChild(minLabel);
+                                    gradientContainer.appendChild(gradient);
+                                    gradientContainer.appendChild(maxLabel);
+                                    
+                                    legend.appendChild(gradientContainer);
+                                    legendContainer.style.display = 'block';
+                                }
+                                
+                                // Function to update UMAP by gene expression
+                                async function updateUMAPByGene(geneName) {
+                                    // Show loading spinner
+                                    document.getElementById('geneLoading').style.display = 'inline-block';
+                                    
+                                    try {
+                                        // Get gene expression values
+                                        const geneExpression = await getGeneExpression(window.h5adFile, geneName);
+    
+                                        console.log("Gene expression:", geneExpression);
+                                        
+                                        if (geneExpression.error) {
+                                            console.error(`Error getting expression for ${geneName}:`, geneExpression.error);
+                                            alert(`Error getting expression for ${geneName}: ${geneExpression.error}`);
+                                            return;
+                                        }
+                                        
+                                        // Update UMAP colors based on gene expression
+                                        updateUMAPColors({
+                                            key: geneName,
+                                            values: geneExpression.values,
+                                            isNumeric: true,
+                                            range: geneExpression.range
+                                        });
+                                        
+                                        // Create numeric legend for gene expression
+                                        createNumericLegend({
+                                            key: geneName,
+                                            range: geneExpression.range
+                                        });
+                                    } catch (error) {
+                                        console.error('Error updating colors:', error);
+                                        alert(`Error updating colors: ${error.message}`);
+                                    } finally {
+                                        // Hide loading spinner
+                                        document.getElementById('geneLoading').style.display = 'none';
+                                    }
+                                }
                                 
                                 // Extract UMAP data for plotting
                                 const umapResult = await extractUMAPData(fileData.file);
@@ -417,6 +747,19 @@
                                         const xValues = umapResult.umapData.map(p => p.x);
                                         const yValues = umapResult.umapData.map(p => p.y);
                                         
+                                        // Calculate axis ranges to ensure square aspect ratio
+                                        const xRange = Math.max(...xValues.map(Math.abs)) * 1.1;
+                                        const yRange = Math.max(...yValues.map(Math.abs)) * 1.1;
+                                        const maxRange = Math.max(xRange, yRange);
+                                        
+                                        // Store the UMAP data globally for later use with coloring
+                                        window.umapData = {
+                                            xValues,
+                                            yValues,
+                                            cellCount: umapResult.cellCount,
+                                            maxRange
+                                        };
+                                        
                                         // Create scatter plot with Plotly
                                         const trace = {
                                             x: xValues,
@@ -434,12 +777,8 @@
                                             hoverinfo: 'none'
                                         };
                                         
-                                        // Calculate axis ranges to ensure square aspect ratio
-                                        const xRange = Math.max(...xValues.map(Math.abs)) * 1.1;
-                                        const yRange = Math.max(...yValues.map(Math.abs)) * 1.1;
-                                        const maxRange = Math.max(xRange, yRange);
-                                        
-                                        const layout = {
+                                        // Store the layout for reuse
+                                        window.umapLayout = {
                                             title: {
                                                 text: 'UMAP Visualization',
                                                 font: {
@@ -486,7 +825,7 @@
                                             aspectratio: { x: 1, y: 1 }
                                         };
                                         
-                                        const config = {
+                                        window.umapConfig = {
                                             responsive: true,
                                             displayModeBar: true,
                                             modeBarButtonsToRemove: ['lasso2d', 'select2d'],
@@ -501,12 +840,207 @@
                                         };
                                         
                                         // Create the plot and then adjust it after rendering
-                                        Plotly.newPlot('umap-plot', [trace], layout, config).then(() => {
+                                        Plotly.newPlot('umap-plot', [trace], window.umapLayout, window.umapConfig).then(() => {
                                             // Force a resize to ensure proper rendering
                                             setTimeout(() => {
                                                 window.dispatchEvent(new Event('resize'));
                                             }, 100);
                                         });
+                                        
+                                        // Show color controls
+                                        document.getElementById('colorControls').style.display = 'block';
+                                        
+                                        // Populate the observation key dropdown
+                                        const obsKeySelect = document.getElementById('obsKeySelect');
+                                        result.obs.forEach(key => {
+                                            const option = document.createElement('option');
+                                            option.value = key;
+                                            option.textContent = key;
+                                            obsKeySelect.appendChild(option);
+                                        });
+                                        
+                                        // Store the file data for later use
+                                        window.h5adFile = fileData.file;
+                                        
+                                        // Add event listener for observation key selection
+                                        obsKeySelect.addEventListener('change', async function() {
+                                            const selectedKey = this.value;
+                                            
+                                            // Clear gene search when obs key is selected
+                                            const geneSearch = document.getElementById('geneSearch');
+                                            geneSearch.value = '';
+                                            
+                                            // Clear legend
+                                            const legendContainer = document.getElementById('legendContainer');
+                                            const legend = document.getElementById('legend');
+                                            legend.innerHTML = '';
+                                            legendContainer.style.display = 'none';
+                                            
+                                            if (!selectedKey) {
+                                                // Reset to default color
+                                                updateUMAPColors();
+                                                return;
+                                            }
+                                            
+                                            // Show loading spinner
+                                            document.getElementById('colorLoading').style.display = 'inline-block';
+                                            
+                                            try {
+                                                // Get observation values for the selected key
+                                                const obsValues = await getObservationValues(window.h5adFile, selectedKey);
+                                                
+                                                if (obsValues.error) {
+                                                    console.error(`Error getting values for ${selectedKey}:`, obsValues.error);
+                                                    alert(`Error getting values for ${selectedKey}: ${obsValues.error}`);
+                                                    return;
+                                                }
+                                                
+                                                // Update UMAP colors based on observation values
+                                                updateUMAPColors(obsValues);
+                                                
+                                                // Create legend
+                                                if (obsValues.isCategorical) {
+                                                    createCategoricalLegend(obsValues);
+                                                } else if (obsValues.isNumeric) {
+                                                    createNumericLegend(obsValues);
+                                                }
+                                            } catch (error) {
+                                                console.error('Error updating colors:', error);
+                                                alert(`Error updating colors: ${error.message}`);
+                                            } finally {
+                                                // Hide loading spinner
+                                                document.getElementById('colorLoading').style.display = 'none';
+                                            }
+                                        });
+                                        
+                                        // Note: The gene selection is now handled by the search functionality
+                                        
+                                        // Function to update UMAP colors
+                                        function updateUMAPColors(obsValues = null) {
+                                            const { xValues, yValues } = window.umapData;
+                                            
+                                            let colors;
+                                            let colorscale;
+                                            
+                                            if (!obsValues) {
+                                                // Default color
+                                                colors = '#4a6fa5';
+                                            } else if (obsValues.isCategorical) {
+                                                // Generate colors for categorical data
+                                                const uniqueValues = obsValues.uniqueValues;
+                                                const colorMap = generateCategoricalColors(uniqueValues);
+                                                colors = obsValues.values.map(val => colorMap[val]);
+                                            } else if (obsValues.isNumeric) {
+                                                // Use a color scale for numeric data
+                                                colors = obsValues.values;
+                                                colorscale = 'Viridis';
+                                            }
+                                            
+                                            const update = {
+                                                marker: { 
+                                                    color: colors,
+                                                    colorscale: colorscale,
+                                                    size: 2.5,
+                                                    opacity: 0.8,
+                                                    line: { width: 0 }
+                                                }
+                                            };
+                                            
+                                            Plotly.restyle('umap-plot', update, 0);
+                                        }
+                                        
+                                        // Function to generate colors for categorical data
+                                        function generateCategoricalColors(uniqueValues) {
+                                            const colorMap = {};
+                                            const colorPalette = [
+                                                '#4285F4', '#EA4335', '#FBBC05', '#34A853', // Google colors
+                                                '#9C27B0', '#673AB7', '#3F51B5', '#2196F3', // Purple-Blue
+                                                '#03A9F4', '#00BCD4', '#009688', '#4CAF50', // Blue-Green
+                                                '#8BC34A', '#CDDC39', '#FFEB3B', '#FFC107', // Green-Yellow
+                                                '#FF9800', '#FF5722', '#795548', '#9E9E9E'  // Orange-Grey
+                                            ];
+                                            
+                                            uniqueValues.forEach((value, index) => {
+                                                colorMap[value] = colorPalette[index % colorPalette.length];
+                                            });
+                                            
+                                            return colorMap;
+                                        }
+                                        
+                                        // Function to create legend for categorical data
+                                        function createCategoricalLegend(obsValues) {
+                                            const legendContainer = document.getElementById('legendContainer');
+                                            const legend = document.getElementById('legend');
+                                            const legendTitle = document.getElementById('legendTitle');
+                                            
+                                            legendTitle.textContent = `Legend: ${obsValues.key}`;
+                                            
+                                            const colorMap = generateCategoricalColors(obsValues.uniqueValues);
+                                            
+                                            obsValues.uniqueValues.forEach(value => {
+                                                const legendItem = document.createElement('div');
+                                                legendItem.style.display = 'flex';
+                                                legendItem.style.alignItems = 'center';
+                                                legendItem.style.marginRight = '10px';
+                                                
+                                                const colorBox = document.createElement('div');
+                                                colorBox.style.width = '12px';
+                                                colorBox.style.height = '12px';
+                                                colorBox.style.backgroundColor = colorMap[value];
+                                                colorBox.style.marginRight = '5px';
+                                                colorBox.style.borderRadius = '2px';
+                                                
+                                                const valueText = document.createElement('span');
+                                                valueText.textContent = value;
+                                                valueText.style.fontSize = '0.85rem';
+                                                
+                                                legendItem.appendChild(colorBox);
+                                                legendItem.appendChild(valueText);
+                                                legend.appendChild(legendItem);
+                                            });
+                                            
+                                            legendContainer.style.display = 'block';
+                                        }
+                                        
+                                        // Function to create legend for numeric data
+                                        function createNumericLegend(obsValues) {
+                                            const legendContainer = document.getElementById('legendContainer');
+                                            const legend = document.getElementById('legend');
+                                            const legendTitle = document.getElementById('legendTitle');
+                                            
+                                            legendTitle.textContent = `Legend: ${obsValues.key} (min: ${obsValues.range.min.toFixed(2)}, max: ${obsValues.range.max.toFixed(2)})`;
+                                            
+                                            // Create a gradient for the numeric legend
+                                            const gradientContainer = document.createElement('div');
+                                            gradientContainer.style.width = '100%';
+                                            gradientContainer.style.display = 'flex';
+                                            gradientContainer.style.alignItems = 'center';
+                                            gradientContainer.style.marginBottom = '5px';
+                                            
+                                            const gradient = document.createElement('div');
+                                            gradient.style.width = '200px';
+                                            gradient.style.height = '20px';
+                                            gradient.style.background = 'linear-gradient(to right, #440154, #3b528b, #21918c, #5ec962, #fde725)';
+                                            gradient.style.borderRadius = '3px';
+                                            gradient.style.marginRight = '10px';
+                                            
+                                            const minLabel = document.createElement('span');
+                                            minLabel.textContent = obsValues.range.min.toFixed(2);
+                                            minLabel.style.fontSize = '0.85rem';
+                                            minLabel.style.marginRight = '10px';
+                                            
+                                            const maxLabel = document.createElement('span');
+                                            maxLabel.textContent = obsValues.range.max.toFixed(2);
+                                            maxLabel.style.fontSize = '0.85rem';
+                                            maxLabel.style.marginLeft = '10px';
+                                            
+                                            gradientContainer.appendChild(minLabel);
+                                            gradientContainer.appendChild(gradient);
+                                            gradientContainer.appendChild(maxLabel);
+                                            
+                                            legend.appendChild(gradientContainer);
+                                            legendContainer.style.display = 'block';
+                                        }
                                     } else {
                                         // Show no UMAP message
                                         document.getElementById('noUmapMessage').style.display = 'block';
