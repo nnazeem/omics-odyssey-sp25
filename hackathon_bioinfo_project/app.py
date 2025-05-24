@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 500  # 500 MB limit for uploads
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024 * 1024  # 100GB GB limit for uploads
 
 # Ensure upload folder exists
 if not os.path.exists(UPLOAD_FOLDER):
