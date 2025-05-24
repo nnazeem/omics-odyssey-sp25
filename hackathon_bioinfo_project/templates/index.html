@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>scRNA-seq Web Analyzer (Scanpy Backend)</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <h1>Single-Cell RNA-Seq Analyzer (Scanpy Backend)</h1>
+
+    <div class="container">
+        <section id="file-upload-section">
+            <h2>1. Upload .h5ad File</h2>
+            <input type="file" id="file-input" accept=".h5ad,.h5">
+            <button id="upload-button">Upload and Process File</button>
+            <p id="file-info"></p>
+            <div id="loader" style="display:none;">Loading and processing...</div>
+        </section>
+
+        <section id="analysis-controls" style="display:none;">
+             <h2>2. Analysis Controls & UMAP</h2>
+            <label for="cluster-select-umap">Color UMAP & Group DE by:</label>
+            <select id="cluster-select-umap"></select>
+            <button id="fetch-analysis-data-button">Show UMAP / Update Groups</button>
+            <div id="umap-plot"></div>
+        </section>
+
+        <section id="de-section" style="display:none;">
+            <h2>3. Differential Expression & Volcano Plot</h2>
+            <div>
+                <label for="group1-select">Group 1 (e.g., a cell type):</label>
+                <select id="group1-select"></select>
+            </div>
+            <div>
+                <label for="group2-select">Group 2 (e.g., another cell type or "All Other Cells"):</label>
+                <select id="group2-select"></select>
+            </div>
+            <div>
+                <label for="pval-threshold">Adjusted P-value threshold (-log10):</label>
+                <input type="number" id="pval-threshold" value="1.3" step="0.1"> </div>
+            <div>
+                <label for="logfc-threshold">LogFC threshold (abs):</label>
+                <input type="number" id="logfc-threshold" value="0.25" step="0.05"> </div>
+             <div>
+                <label for="top-k-genes">Top K genes to label:</label>
+                <input type="number" id="top-k-genes" value="10" step="1">
+            </div>
+            <button id="run-de-button">Run Differential Expression</button>
+            <div id="volcano-plot"></div>
+            <p id="de-status"></p>
+        </section>
+    </div>
+
+    <script src="{{ url_for('static', filename='client.js') }}"></script>
+</body>
+</html>
