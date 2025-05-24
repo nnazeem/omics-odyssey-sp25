@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>H5AD File Analysis</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Plotly.js for visualization -->
+    <script src="https://cdn.plot.ly/plotly-2.20.0.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .container {
+            display: flex;
+            min-height: 100vh;
+            width: 100%;
+        }
+        
+        .sidebar {
+            width: 280px;
+            background-color: #f8f9fa;
+            border-right: 1px solid #e9ecef;
+            padding: 15px;
+            overflow-y: auto;
+            height: 100vh;
+            position: fixed;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+            box-sizing: border-box;
+            z-index: 10;
+        }
+        
+        .main-content {
+            flex: 1;
+            padding: 25px 30px;
+            margin-left: 280px;
+            max-width: calc(100% - 280px);
+            box-sizing: border-box;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .results-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+        
+        .success-icon {
+            font-size: 32px;
+            color: #4a6fa5;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        
+        .file-details {
+            background: #ffffff;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 15px;
+            border: 1px solid #e9ecef;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 0.9rem;
+        }
+        
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        
+        .detail-label {
+            font-weight: 500;
+            color: #495057;
+        }
+        
+        .detail-value {
+            color: #6c757d;
+        }
+        
+        .back-btn {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 8px 15px;
+            background-color: #4a6fa5;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: all 0.3s;
+            font-size: 0.9rem;
+            text-align: center;
+        }
+        
+        .back-btn:hover {
+            background-color: #3a5a80;
+            transform: translateY(-2px);
+        }
+        
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        
+        h1 {
+            margin-bottom: 10px;
+            font-size: 1.5rem;
+            text-align: center;
+        }
+        
+        h2 {
+            margin: 10px 0;
+            font-size: 1.3rem;
+            border-bottom: 2px solid #4a6fa5;
+            padding-bottom: 8px;
+        }
+        
+        h3 {
+            font-size: 1.1rem;
+            margin: 15px 0 10px;
+        }
+        
+        p {
+            color: #6c757d;
+            margin-bottom: 15px;
+            font-size: 0.95rem;
+        }
+        
+        .loading {
+            text-align: center;
+            margin: 20px 0;
+            font-style: italic;
+            color: #6c757d;
+        }
+        
+        .keys-section {
+            background: #ffffff;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 15px;
+            border: 1px solid #e9ecef;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        
+        .keys-title {
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #2c3e50;
+            font-size: 0.95rem;
+            border-bottom: 2px solid #4a6fa5;
+            padding-bottom: 5px;
+        }
+        
+        .keys-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            max-height: 180px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+        }
+        
+        .keys-list li {
+            padding: 6px 0;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            align-items: center;
+            font-size: 0.85rem;
+        }
+        
+        .keys-list li:last-child {
+            border-bottom: none;
+        }
+        
+        .keys-list li::before {
+            content: '\2022';
+            color: #4a6fa5;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        
+        .plot-container {
+            width: 100%;
+            flex: 1;
+            position: relative;
+            background: #ffffff;
+            border-radius: 8px;
+            box-sizing: border-box;
+            margin: 0 auto 20px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+            border: 1px solid #e9ecef;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #umap-plot {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .error-message {
+            color: #dc3545;
+            text-align: center;
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8d7da;
+            border-radius: 5px;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .actions {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 30px;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(74, 111, 165, 0.3);
+            border-radius: 50%;
+            border-top-color: #4a6fa5;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar with file info and metadata -->
+        <div class="sidebar">
+            <div class="success-icon">
+                <i class="fas fa-dna"></i>
+            </div>
+            <h1>H5AD Analysis</h1>
+            
+            <div class="file-details">
+                <div class="detail-row">
+                    <span class="detail-label">File Name:</span>
+                    <span class="detail-value" id="fileName"></span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">File Size:</span>
+                    <span class="detail-value" id="fileSize"></span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Last Modified:</span>
+                    <span class="detail-value" id="lastModified"></span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Cell Count:</span>
+                    <span class="detail-value" id="cellCount">-</span>
+                </div>
+            </div>
+            
+            <!-- Observation Keys Section -->
+            <div class="keys-section">
+                <div class="keys-title">Observation Keys (.obs)</div>
+                <ul id="obsList" class="keys-list">
+                    <li>Loading keys...</li>
+                </ul>
+            </div>
+            
+            <!-- Observation Matrices Section -->
+            <div class="keys-section">
+                <div class="keys-title">Observation Matrices (.obsm)</div>
+                <ul id="obsmList" class="keys-list">
+                    <li>Loading keys...</li>
+                </ul>
+            </div>
+            
+            <a href="index.html" class="back-btn">
+                <i class="fas fa-arrow-left"></i> Upload Another File
+            </a>
+        </div>
+        
+        <!-- Main content area with plots -->
+        <div class="main-content">
+            <div class="results-container">
+                <h2>UMAP Visualization</h2>
+                
+                <div id="loadingMessage" class="loading">
+                    <div class="spinner"></div> Loading h5ad file structure...
+                </div>
+                
+                <div id="errorMessage" class="error-message" style="display: none;">
+                    Error loading file structure. Please try again with a valid h5ad file.
+                </div>
+                
+                <div id="noUmapMessage" class="error-message" style="display: none;">
+                    No UMAP embedding found in this file. The file does not contain 'X_umap' in the obsm group.
+                </div>
+                
+                <div id="plotContainer" class="plot-container" style="display: none; width: calc(100% - 20px); aspect-ratio: 1/1; max-height: calc(100vh - 120px);">
+                    <div id="umap-plot"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import h5parser module -->    
+    <script type="module">
+        import { parseH5AD, getH5ADMetadata, extractUMAPData } from './h5parser.js';
+        
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Get file info from sessionStorage
+            const fileInfo = JSON.parse(sessionStorage.getItem('fileInfo'));
+            
+            if (!fileInfo) {
+                // If no file info is found, redirect back to the upload page
+                window.location.href = 'index.html';
+                return;
+            }
+            
+            // Display file information
+            document.getElementById('fileName').textContent = fileInfo.name;
+            document.getElementById('fileSize').textContent = formatFileSize(fileInfo.size);
+            
+            // Format and display last modified date
+            const lastModified = new Date(fileInfo.lastModified);
+            document.getElementById('lastModified').textContent = lastModified.toLocaleString();
+            
+            // Retrieve the file from IndexedDB
+            try {
+                const fileRequest = indexedDB.open('h5adFileStorage', 1);
+                
+                fileRequest.onsuccess = async function(event) {
+                    const db = event.target.result;
+                    const transaction = db.transaction(['files'], 'readonly');
+                    const store = transaction.objectStore('files');
+                    const getRequest = store.get(fileInfo.name);
+                    
+                    getRequest.onsuccess = async function(event) {
+                        const fileData = event.target.result;
+                        
+                        if (fileData && fileData.file) {
+                            try {
+                                // Parse the h5ad file structure
+                                const result = await parseH5AD(fileData.file);
+                                
+                                // Extract UMAP data for plotting
+                                const umapResult = await extractUMAPData(fileData.file);
+                                
+                                // Hide loading message
+                                document.getElementById('loadingMessage').style.display = 'none';
+                                
+                                if (result.error) {
+                                    // Show error message
+                                    const errorElement = document.getElementById('errorMessage');
+                                    errorElement.textContent = `Error: ${result.error}`;
+                                    errorElement.style.display = 'block';
+                                } else {
+                                    // Display obs keys
+                                    const obsList = document.getElementById('obsList');
+                                    obsList.innerHTML = '';
+                                    
+                                    if (result.obs.length > 0) {
+                                        result.obs.forEach(key => {
+                                            const li = document.createElement('li');
+                                            li.textContent = key;
+                                            obsList.appendChild(li);
+                                        });
+                                    } else {
+                                        const li = document.createElement('li');
+                                        li.textContent = 'No .obs keys found';
+                                        obsList.appendChild(li);
+                                    }
+                                    
+                                    // Display obsm keys
+                                    const obsmList = document.getElementById('obsmList');
+                                    obsmList.innerHTML = '';
+                                    
+                                    if (result.obsm.length > 0) {
+                                        result.obsm.forEach(key => {
+                                            const li = document.createElement('li');
+                                            li.textContent = key;
+                                            obsmList.appendChild(li);
+                                        });
+                                    } else {
+                                        const li = document.createElement('li');
+                                        li.textContent = 'No .obsm keys found';
+                                        obsList.appendChild(li);
+                                    }
+                                    
+                                    // Display cell count if available
+                                    if (umapResult.cellCount > 0) {
+                                        document.getElementById('cellCount').textContent = umapResult.cellCount.toLocaleString();
+                                    }
+                                    
+                                    // Plot UMAP if available
+                                    if (umapResult.hasUMAP && umapResult.umapData) {
+                                        // Show plot container
+                                        document.getElementById('plotContainer').style.display = 'block';
+                                        
+                                        // Extract x and y coordinates for plotting
+                                        const xValues = umapResult.umapData.map(p => p.x);
+                                        const yValues = umapResult.umapData.map(p => p.y);
+                                        
+                                        // Create scatter plot with Plotly
+                                        const trace = {
+                                            x: xValues,
+                                            y: yValues,
+                                            mode: 'markers',
+                                            type: 'scatter',
+                                            marker: {
+                                                size: 2.5,
+                                                opacity: 0.8,
+                                                color: '#4a6fa5',
+                                                line: {
+                                                    width: 0
+                                                }
+                                            },
+                                            hoverinfo: 'none'
+                                        };
+                                        
+                                        // Calculate axis ranges to ensure square aspect ratio
+                                        const xRange = Math.max(...xValues.map(Math.abs)) * 1.1;
+                                        const yRange = Math.max(...yValues.map(Math.abs)) * 1.1;
+                                        const maxRange = Math.max(xRange, yRange);
+                                        
+                                        const layout = {
+                                            title: {
+                                                text: 'UMAP Visualization',
+                                                font: {
+                                                    size: 18,
+                                                    color: '#2c3e50'
+                                                }
+                                            },
+                                            xaxis: {
+                                                title: {
+                                                    text: 'UMAP1',
+                                                    font: {
+                                                        size: 14
+                                                    }
+                                                },
+                                                zeroline: false,
+                                                gridcolor: '#f0f0f0',
+                                                showgrid: true,
+                                                range: [-maxRange, maxRange],
+                                                automargin: true
+                                            },
+                                            yaxis: {
+                                                title: {
+                                                    text: 'UMAP2',
+                                                    font: {
+                                                        size: 14
+                                                    }
+                                                },
+                                                zeroline: false,
+                                                gridcolor: '#f0f0f0',
+                                                showgrid: true,
+                                                range: [-maxRange, maxRange],
+                                                automargin: true,
+                                                scaleanchor: 'x',
+                                                scaleratio: 1
+                                            },
+                                            hovermode: 'closest',
+                                            margin: { t: 50, l: 70, r: 50, b: 70 },
+                                            plot_bgcolor: '#ffffff',
+                                            paper_bgcolor: '#ffffff',
+                                            autosize: true,
+                                            showlegend: false,
+                                            width: 800,
+                                            height: 800,
+                                            aspectratio: { x: 1, y: 1 }
+                                        };
+                                        
+                                        const config = {
+                                            responsive: true,
+                                            displayModeBar: true,
+                                            modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                                            displaylogo: false,
+                                            toImageButtonOptions: {
+                                                format: 'png',
+                                                filename: 'umap_plot',
+                                                height: 800,
+                                                width: 800,
+                                                scale: 2
+                                            }
+                                        };
+                                        
+                                        // Create the plot and then adjust it after rendering
+                                        Plotly.newPlot('umap-plot', [trace], layout, config).then(() => {
+                                            // Force a resize to ensure proper rendering
+                                            setTimeout(() => {
+                                                window.dispatchEvent(new Event('resize'));
+                                            }, 100);
+                                        });
+                                    } else {
+                                        // Show no UMAP message
+                                        document.getElementById('noUmapMessage').style.display = 'block';
+                                    }
+                                }
+                            } catch (error) {
+                                console.error('Error processing h5ad file:', error);
+                                // Show error message
+                                document.getElementById('loadingMessage').style.display = 'none';
+                                const errorElement = document.getElementById('errorMessage');
+                                errorElement.textContent = `Error processing file: ${error.message}`;
+                                errorElement.style.display = 'block';
+                            }
+                        } else {
+                            // File not found in IndexedDB
+                            document.getElementById('loadingMessage').style.display = 'none';
+                            const errorElement = document.getElementById('errorMessage');
+                            errorElement.textContent = 'File not found in storage. Please upload again.';
+                            errorElement.style.display = 'block';
+                        }
+                    };
+                    
+                    getRequest.onerror = function(event) {
+                        console.error('Error retrieving file from IndexedDB:', event.target.error);
+                        document.getElementById('loadingMessage').style.display = 'none';
+                        const errorElement = document.getElementById('errorMessage');
+                        errorElement.textContent = 'Error retrieving file from storage.';
+                        errorElement.style.display = 'block';
+                    };
+                };
+                
+                fileRequest.onerror = function(event) {
+                    console.error('Error opening IndexedDB:', event.target.error);
+                    document.getElementById('loadingMessage').style.display = 'none';
+                    const errorElement = document.getElementById('errorMessage');
+                    errorElement.textContent = 'Error accessing storage.';
+                    errorElement.style.display = 'block';
+                };
+            } catch (error) {
+                console.error('Error retrieving file:', error);
+                document.getElementById('loadingMessage').style.display = 'none';
+                const errorElement = document.getElementById('errorMessage');
+                errorElement.textContent = `Error: ${error.message}`;
+                errorElement.style.display = 'block';
+            }
+            
+            function formatFileSize(bytes) {
+                if (bytes === 0) return '0 Bytes';
+                
+                const k = 1024;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+        });
+    </script>
+</body>
+</html>
